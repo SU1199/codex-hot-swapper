@@ -71,3 +71,34 @@ func TestPreferAccountMovesAccountFirstAndClearsSticky(t *testing.T) {
 		}
 	}
 }
+
+func TestUpdateStrategyPersistsSetting(t *testing.T) {
+	dir := t.TempDir()
+	st, err := Open(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if err := st.UpdateStrategy(StrategyRoundRobin); err != nil {
+		t.Fatal(err)
+	}
+
+	reopened, err := Open(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, settings, _ := reopened.Snapshot()
+	if settings.Strategy != StrategyRoundRobin {
+		t.Fatalf("strategy = %q, want %q", settings.Strategy, StrategyRoundRobin)
+	}
+}
+
+func TestUpdateStrategyRejectsUnknownStrategy(t *testing.T) {
+	st, err := Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := st.UpdateStrategy("shuffle"); err == nil {
+		t.Fatal("expected unknown strategy to fail")
+	}
+}

@@ -18,6 +18,9 @@
     .notice, .error { margin: 18px 0; padding: 10px 12px; border: 1px solid; }
     .notice { border-color: #6b7f3f; background: #f1f6e8; }
     .error { border-color: #9b3d32; background: #fbebe8; }
+    .strategy-options { display: grid; gap: 8px; max-width: 860px; }
+    .strategy-option { display: grid; grid-template-columns: auto 1fr; gap: 8px; align-items: start; }
+    .strategy-option strong { display: block; }
   </style>
 </head>
 <body>
@@ -35,7 +38,17 @@
   {{if .Error}}<div class="error">{{.Error}}</div>{{end}}
 
   <h2>Accounts</h2>
-  <p class="muted">Accounts are used from top to bottom. The first available account keeps handling new traffic until it is paused, cooling down, deactivated, rate-limited, or quota-limited.</p>
+  <form method="post" action="/settings/strategy" class="strategy-options">
+    <label class="strategy-option">
+      <input type="radio" name="strategy" value="drain_order" {{if eq .Strategy "drain_order"}}checked{{end}} onchange="this.form.submit()">
+      <span><strong>Drain order</strong><span class="muted">Use accounts from top to bottom. The first available account keeps handling new traffic until it is paused, cooling down, deactivated, rate-limited, or quota-limited.</span></span>
+    </label>
+    <label class="strategy-option">
+      <input type="radio" name="strategy" value="round_robin" {{if eq .Strategy "round_robin"}}checked{{end}} onchange="this.form.submit()">
+      <span><strong>Round robin</strong><span class="muted">Spread new traffic across available accounts by picking the account used least recently. Sticky Codex sessions still stay on their mapped account while it is healthy.</span></span>
+    </label>
+    <noscript><button>Save Strategy</button></noscript>
+  </form>
   <table>
     <thead>
       <tr>

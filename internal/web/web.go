@@ -49,6 +49,7 @@ func (w *Web) Register(mux *http.ServeMux) {
 	mux.HandleFunc("/account/delete", w.delete)
 	mux.HandleFunc("/usage/refresh", w.refreshUsage)
 	mux.HandleFunc("/usage/refresh-all", w.refreshAllUsage)
+	mux.HandleFunc("/settings/strategy", w.updateStrategy)
 	mux.HandleFunc("/codex-config/install", w.installCodexConfig)
 }
 
@@ -64,6 +65,7 @@ func (w *Web) index(rw http.ResponseWriter, r *http.Request) {
 		"DataDir":  w.store.Dir(),
 		"Logs":     w.store.RecentRequestLogs(25),
 		"Config":   codexconfig.Snippet(),
+		"Strategy": settings.Strategy,
 		"Notice":   r.URL.Query().Get("notice"),
 		"Error":    r.URL.Query().Get("error"),
 	}
@@ -101,6 +103,18 @@ func (w *Web) refreshAllUsage(rw http.ResponseWriter, r *http.Request) {
 	defer cancel()
 	w.usage.RefreshAll(ctx)
 	http.Redirect(rw, r, "/", http.StatusFound)
+}
+
+func (w *Web) updateStrategy(rw http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(rw, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	if err := w.store.UpdateStrategy(r.FormValue("strategy")); err != nil {
+		http.Redirect(rw, r, "/?error="+url.QueryEscape(err.Error()), http.StatusFound)
+		return
+	}
+	http.Redirect(rw, r, "/?notice="+url.QueryEscape("Updated account strategy"), http.StatusFound)
 }
 
 func (w *Web) installCodexConfig(rw http.ResponseWriter, r *http.Request) {

@@ -33,7 +33,7 @@ func StickyKey(r *http.Request) string {
 }
 
 func (b *Switcher) Select(stickyKey string, exclude map[string]bool) (accounts.Account, error) {
-	accts, _, rt := b.store.Snapshot()
+	accts, settings, rt := b.store.Snapshot()
 	now := time.Now().UTC()
 	if stickyKey != "" {
 		if id := rt.Sticky[stickyKey]; id != "" && !exclude[id] {
@@ -45,6 +45,13 @@ func (b *Switcher) Select(stickyKey string, exclude map[string]bool) (accounts.A
 		}
 	}
 
+	if settings.Strategy == store.StrategyRoundRobin {
+		return b.selectRoundRobin(accts, stickyKey, exclude, now)
+	}
+	return b.selectDrainOrder(accts, stickyKey, exclude, now)
+}
+
+func (b *Switcher) selectDrainOrder(accts []accounts.Account, stickyKey string, exclude map[string]bool, now time.Time) (accounts.Account, error) {
 	for i := range accts {
 		acct := accts[i]
 		if exclude[acct.ID] || !acct.Available(now) {
@@ -56,6 +63,34 @@ func (b *Switcher) Select(stickyKey string, exclude map[string]bool) (accounts.A
 		return acct, nil
 	}
 	return accounts.Account{}, errors.New("no active accounts available")
+}
+
+func (b *Switcher) selectRoundRobin(accts []accounts.Account, stickyKey string, exclude map[string]bool, now time.Time) (accounts.Account, error) {
+	var selected *accounts.Account
+	for i := range accts {
+		acct := accts[i]
+		if exclude[acct.ID] || !acct.Available(now) {
+			continue
+		}
+		if selected == nil {
+			selected = &acct
+			continue
+		}
+		if acct.LastSelectedAt == nil {
+			selected = &acct
+			continue
+		}
+		if selected.LastSelectedAt != nil && acct.LastSelectedAt.Before(*selected.LastSelectedAt) {
+			selected = &acct
+		}
+	}
+	if selected == nil {
+		return accounts.Account{}, errors.New("no active accounts available")
+	}
+	if stickyKey != "" {
+		_ = b.store.SetSticky(stickyKey, selected.ID)
+	}
+	return *selected, nil
 }
 
 func (b *Switcher) RecordSuccess(id string) {

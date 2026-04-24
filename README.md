@@ -11,7 +11,7 @@ It is intentionally minimal: one Go binary, local JSON storage, OAuth login, usa
 - Local Codex-compatible provider at `http://127.0.0.1:2455/backend-api/codex`
 - Browser OAuth flow for adding ChatGPT accounts
 - Manual hot swap between accounts from the UI
-- Drain-order account selection: use the first available account until it cannot serve traffic
+- Configurable account strategy: drain order or round robin
 - Pause, resume, and remove accounts
 - Usage and credit refresh per account
 - Sticky session continuity for Codex conversation headers
@@ -49,7 +49,10 @@ requires_openai_auth = true
 
 ## Hot Swapping
 
-Accounts are used from top to bottom. New traffic keeps using the first available account until that account is paused, cooling down, deactivated, rate-limited, or quota-limited. Only then does traffic move to the next account.
+The UI offers two account strategies:
+
+- **Drain order**: use accounts from top to bottom. New traffic keeps using the first available account until that account is paused, cooling down, deactivated, rate-limited, or quota-limited. Only then does traffic move to the next account.
+- **Round robin**: spread new traffic across available accounts by picking the account used least recently.
 
 The account table includes **Move to Top** for each account. Clicking it moves that account to the front of the priority order and clears existing sticky mappings, so new Codex traffic moves to the selected account instead of staying pinned to an earlier one.
 

@@ -72,3 +72,26 @@ func TestSelectDrainsFirstAvailableAccount(t *testing.T) {
 		t.Fatalf("selected %s after first account became unavailable", selected.ID)
 	}
 }
+
+func TestSelectRoundRobinUsesLeastRecentlySelectedAccount(t *testing.T) {
+	st, err := store.Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := st.UpdateStrategy(store.StrategyRoundRobin); err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now().UTC()
+	first := now.Add(-time.Minute)
+	second := now.Add(-time.Hour)
+	_ = st.UpsertAccount(accounts.Account{ID: "a", AccessToken: "a", RefreshToken: "r", Status: accounts.StatusActive, LastSelectedAt: &first})
+	_ = st.UpsertAccount(accounts.Account{ID: "b", AccessToken: "a", RefreshToken: "r", Status: accounts.StatusActive, LastSelectedAt: &second})
+
+	selected, err := New(st).Select("", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if selected.ID != "b" {
+		t.Fatalf("selected %s", selected.ID)
+	}
+}

@@ -13,11 +13,17 @@ import (
 	"codex-hot-swapper/internal/accounts"
 )
 
+const (
+	StrategyDrainOrder = "drain_order"
+	StrategyRoundRobin = "round_robin"
+)
+
 type Settings struct {
 	UpstreamBaseURL string `json:"upstream_base_url"`
 	AuthBaseURL     string `json:"auth_base_url"`
 	OAuthClientID   string `json:"oauth_client_id"`
 	OAuthScope      string `json:"oauth_scope"`
+	Strategy        string `json:"strategy"`
 }
 
 type RequestLogEntry struct {
@@ -57,6 +63,7 @@ func Open(dir string) (*Store, error) {
 			AuthBaseURL:     "https://auth.openai.com",
 			OAuthClientID:   "app_EMoamEEZ73f0CkXaXp7hrann",
 			OAuthScope:      "openid profile email offline_access",
+			Strategy:        StrategyDrainOrder,
 		},
 		Runtime: Runtime{Sticky: map[string]string{}},
 	}
@@ -82,6 +89,9 @@ func Open(dir string) (*Store, error) {
 	}
 	if s.Settings.OAuthScope == "" {
 		s.Settings.OAuthScope = "openid profile email offline_access"
+	}
+	if !ValidStrategy(s.Settings.Strategy) {
+		s.Settings.Strategy = StrategyDrainOrder
 	}
 	return s, nil
 }
@@ -125,6 +135,16 @@ func (s *Store) UpdateAccount(id string, fn func(*accounts.Account)) error {
 		}
 	}
 	return fmt.Errorf("account not found: %s", id)
+}
+
+func (s *Store) UpdateStrategy(strategy string) error {
+	if !ValidStrategy(strategy) {
+		return fmt.Errorf("unknown strategy: %s", strategy)
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.Settings.Strategy = strategy
+	return s.saveSettingsLocked()
 }
 
 func (s *Store) DeleteAccount(id string) error {
@@ -227,8 +247,16 @@ func (s *Store) saveAccountsLocked() error {
 	return atomicWriteJSON(filepath.Join(s.dir, "accounts.json"), s.Accounts)
 }
 
+func (s *Store) saveSettingsLocked() error {
+	return atomicWriteJSON(filepath.Join(s.dir, "settings.json"), s.Settings)
+}
+
 func (s *Store) saveRuntimeLocked() error {
 	return atomicWriteJSON(filepath.Join(s.dir, "runtime.json"), s.Runtime)
+}
+
+func ValidStrategy(strategy string) bool {
+	return strategy == StrategyDrainOrder || strategy == StrategyRoundRobin
 }
 
 func loadJSON(path string, target any) error {
