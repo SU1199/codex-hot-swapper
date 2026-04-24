@@ -27,6 +27,35 @@ type Web struct {
 	tmpl  *template.Template
 }
 
+type accountView struct {
+	Account          accounts.Account
+	PrimaryUsed      string
+	PrimaryLeft      string
+	PrimaryReset     string
+	SecondaryUsed    string
+	SecondaryLeft    string
+	SecondaryReset   string
+	Credits          string
+	LastSelected     string
+	Cooldown         string
+	Fetched          string
+	HasPrimary       bool
+	PrimaryLeftValue string
+}
+
+type usageSummary struct {
+	AccountCount        int
+	ActiveCount         int
+	KnownPrimaryCount   int
+	PrimaryUsed         string
+	PrimaryLeft         string
+	PrimaryLeftValue    string
+	KnownSecondaryCount int
+	SecondaryUsed       string
+	SecondaryLeft       string
+	SecondaryLeftValue  string
+}
+
 func New(st *store.Store, oauthSvc *oauth.Service, usageSvc *usage.Service) *Web {
 	return &Web{
 		store: st,
@@ -59,8 +88,10 @@ func (w *Web) index(rw http.ResponseWriter, r *http.Request) {
 		return
 	}
 	accts, settings, _ := w.store.Snapshot()
+	accountViews := buildAccountViews(accts)
 	data := map[string]any{
-		"Accounts": accts,
+		"Accounts": accountViews,
+		"Summary":  buildUsageSummary(accts),
 		"Settings": settings,
 		"DataDir":  w.store.Dir(),
 		"Logs":     w.store.RecentRequestLogs(25),
@@ -198,6 +229,101 @@ func usageWindow(win *accounts.UsageWindow) string {
 	return strings.Join(parts, " · ")
 }
 
+func buildAccountViews(accts []accounts.Account) []accountView {
+	out := make([]accountView, 0, len(accts))
+	for _, acct := range accts {
+		view := accountView{
+			Account:        acct,
+			PrimaryUsed:    usageUsed(acct.Usage.Primary),
+			PrimaryLeft:    usageLeft(acct.Usage.Primary),
+			PrimaryReset:   usageReset(acct.Usage.Primary),
+			SecondaryUsed:  usageUsed(acct.Usage.Secondary),
+			SecondaryLeft:  usageLeft(acct.Usage.Secondary),
+			SecondaryReset: usageReset(acct.Usage.Secondary),
+			Credits:        credits(acct.Usage.Credits),
+			LastSelected:   formatTime(acct.LastSelectedAt),
+			Cooldown:       formatTime(acct.CooldownUntil),
+			Fetched:        ago(acct.Usage.LastFetched),
+			HasPrimary:     acct.Usage.Primary != nil && acct.Usage.Primary.UsedPercent != nil,
+		}
+		if view.HasPrimary {
+			view.PrimaryLeftValue = usageLeft(acct.Usage.Primary)
+		}
+		out = append(out, view)
+	}
+	return out
+}
+
+func buildUsageSummary(accts []accounts.Account) usageSummary {
+	summary := usageSummary{AccountCount: len(accts)}
+	var primaryUsed float64
+	var secondaryUsed float64
+	now := time.Now().UTC()
+	for _, acct := range accts {
+		if acct.Available(now) {
+			summary.ActiveCount++
+		}
+		if acct.Usage.Primary != nil && acct.Usage.Primary.UsedPercent != nil {
+			summary.KnownPrimaryCount++
+			primaryUsed += clampPercent(*acct.Usage.Primary.UsedPercent)
+		}
+		if acct.Usage.Secondary != nil && acct.Usage.Secondary.UsedPercent != nil {
+			summary.KnownSecondaryCount++
+			secondaryUsed += clampPercent(*acct.Usage.Secondary.UsedPercent)
+		}
+	}
+	if summary.KnownPrimaryCount > 0 {
+		used := primaryUsed / float64(summary.KnownPrimaryCount)
+		left := 100 - used
+		summary.PrimaryUsed = formatFloat(used)
+		summary.PrimaryLeft = formatFloat(left)
+		summary.PrimaryLeftValue = formatFloat(left)
+	} else {
+		summary.PrimaryUsed = "unknown"
+		summary.PrimaryLeft = "unknown"
+		summary.PrimaryLeftValue = "0"
+	}
+	if summary.KnownSecondaryCount > 0 {
+		used := secondaryUsed / float64(summary.KnownSecondaryCount)
+		left := 100 - used
+		summary.SecondaryUsed = formatFloat(used)
+		summary.SecondaryLeft = formatFloat(left)
+		summary.SecondaryLeftValue = formatFloat(left)
+	} else {
+		summary.SecondaryUsed = "unknown"
+		summary.SecondaryLeft = "unknown"
+		summary.SecondaryLeftValue = "0"
+	}
+	return summary
+}
+
+func usageUsed(win *accounts.UsageWindow) string {
+	if win == nil || win.UsedPercent == nil {
+		return "unknown"
+	}
+	return formatFloat(clampPercent(*win.UsedPercent))
+}
+
+func usageLeft(win *accounts.UsageWindow) string {
+	if win == nil || win.UsedPercent == nil {
+		return "unknown"
+	}
+	return formatFloat(100 - clampPercent(*win.UsedPercent))
+}
+
+func usageReset(win *accounts.UsageWindow) string {
+	if win == nil {
+		return "unknown"
+	}
+	if win.ResetAt != nil && *win.ResetAt > 0 {
+		return time.Unix(*win.ResetAt, 0).Local().Format("Jan 2 15:04")
+	}
+	if win.ResetAfterSeconds != nil && *win.ResetAfterSeconds > 0 {
+		return "in " + formatDuration(time.Duration(*win.ResetAfterSeconds)*time.Second)
+	}
+	return "unknown"
+}
+
 func credits(c *accounts.Credits) string {
 	if c == nil {
 		return "unknown"
@@ -225,6 +351,13 @@ func ago(t *time.Time) string {
 	return formatDuration(d) + " ago"
 }
 
+func formatTime(t *time.Time) string {
+	if t == nil {
+		return "none"
+	}
+	return t.Local().Format("Jan 2 15:04")
+}
+
 func formatDuration(d time.Duration) string {
 	if d < time.Hour {
 		return strings.TrimSuffix((d.Round(time.Minute)).String(), "0s")
@@ -237,4 +370,14 @@ func formatDuration(d time.Duration) string {
 
 func formatFloat(v float64) string {
 	return strings.TrimRight(strings.TrimRight(strconv.FormatFloat(v, 'f', 1, 64), "0"), ".")
+}
+
+func clampPercent(v float64) float64 {
+	if v < 0 {
+		return 0
+	}
+	if v > 100 {
+		return 100
+	}
+	return v
 }

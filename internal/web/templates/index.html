@@ -5,9 +5,11 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Codex Hot Swapper</title>
   <style>
-    body { font-family: system-ui, -apple-system, BlinkMacSystemFont, sans-serif; margin: 32px; color: #151515; background: #fbfbf8; }
-    header { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
-    table { width: 100%; border-collapse: collapse; margin-top: 18px; }
+    body { font-family: system-ui, -apple-system, BlinkMacSystemFont, sans-serif; margin: 28px; color: #151515; background: #fbfbf8; }
+    header { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; border-bottom: 2px solid #151515; padding-bottom: 18px; }
+    h1 { margin: 0 0 6px; }
+    h2 { margin-top: 28px; }
+    table { width: 100%; border-collapse: collapse; margin-top: 14px; table-layout: fixed; }
     th, td { border-bottom: 1px solid #dedbd1; padding: 8px; text-align: left; vertical-align: top; }
     th { background: #f0eee6; }
     button, .button { border: 1px solid #151515; background: #fff; color: #151515; padding: 6px 10px; text-decoration: none; cursor: pointer; }
@@ -15,12 +17,29 @@
     pre { background: #f0eee6; padding: 12px; overflow: auto; }
     .muted { color: #69665d; }
     .actions { display: flex; gap: 6px; flex-wrap: wrap; }
+    .stack { display: grid; gap: 12px; }
     .notice, .error { margin: 18px 0; padding: 10px 12px; border: 1px solid; }
     .notice { border-color: #6b7f3f; background: #f1f6e8; }
     .error { border-color: #9b3d32; background: #fbebe8; }
+    .summary-grid { display: grid; grid-template-columns: repeat(4, minmax(160px, 1fr)); gap: 10px; margin-top: 18px; }
+    .summary-box { border: 2px solid #151515; background: #fff; padding: 12px; min-height: 84px; }
+    .summary-box strong { display: block; font-size: 26px; line-height: 1.1; margin-top: 5px; }
+    .bar { height: 14px; border: 1px solid #151515; background: #dedbd1; margin-top: 10px; }
+    .bar span { display: block; height: 100%; background: #151515; }
     .strategy-options { display: grid; gap: 8px; max-width: 860px; }
     .strategy-option { display: grid; grid-template-columns: auto 1fr; gap: 8px; align-items: start; }
     .strategy-option strong { display: block; }
+    .accounts-list { display: grid; gap: 10px; margin-top: 16px; }
+    .account-row { border: 2px solid #151515; background: #fff; display: grid; grid-template-columns: minmax(220px, 1.2fr) minmax(280px, 1.7fr) minmax(160px, .8fr) minmax(210px, 1fr); gap: 12px; padding: 12px; }
+    .account-main strong { display: block; overflow-wrap: anywhere; }
+    .account-id, .error-text { overflow-wrap: anywhere; }
+    .pill { display: inline-block; border: 1px solid #151515; padding: 2px 6px; margin: 0 4px 4px 0; background: #f0eee6; }
+    .metric { display: grid; gap: 3px; margin-bottom: 8px; }
+    .metric-line { display: flex; justify-content: space-between; gap: 12px; }
+    @media (max-width: 980px) {
+      .summary-grid, .account-row { grid-template-columns: 1fr; }
+      header { display: grid; }
+    }
   </style>
 </head>
 <body>
@@ -37,6 +56,31 @@
   {{if .Notice}}<div class="notice">{{.Notice}}</div>{{end}}
   {{if .Error}}<div class="error">{{.Error}}</div>{{end}}
 
+  <section class="summary-grid" aria-label="Combined usage">
+    <div class="summary-box">
+      <span class="muted">Primary pool left</span>
+      <strong>{{.Summary.PrimaryLeft}}%</strong>
+      <div class="bar"><span style="width: {{.Summary.PrimaryLeftValue}}%"></span></div>
+      <div class="muted">{{.Summary.PrimaryUsed}}% used · {{.Summary.KnownPrimaryCount}} measured</div>
+    </div>
+    <div class="summary-box">
+      <span class="muted">Secondary pool left</span>
+      <strong>{{.Summary.SecondaryLeft}}%</strong>
+      <div class="bar"><span style="width: {{.Summary.SecondaryLeftValue}}%"></span></div>
+      <div class="muted">{{.Summary.SecondaryUsed}}% used · {{.Summary.KnownSecondaryCount}} measured</div>
+    </div>
+    <div class="summary-box">
+      <span class="muted">Accounts</span>
+      <strong>{{.Summary.ActiveCount}} / {{.Summary.AccountCount}}</strong>
+      <div class="muted">available right now</div>
+    </div>
+    <div class="summary-box">
+      <span class="muted">Strategy</span>
+      <strong>{{if eq .Strategy "round_robin"}}Round robin{{else}}Drain order{{end}}</strong>
+      <div class="muted">sticky sessions preserved while healthy</div>
+    </div>
+  </section>
+
   <h2>Accounts</h2>
   <form method="post" action="/settings/strategy" class="strategy-options">
     <label class="strategy-option">
@@ -49,53 +93,53 @@
     </label>
     <noscript><button>Save Strategy</button></noscript>
   </form>
-  <table>
-    <thead>
-      <tr>
-        <th>Email</th>
-        <th>Status</th>
-        <th>Plan</th>
-        <th>Limits</th>
-        <th>Credits</th>
-        <th>Last selected</th>
-        <th>Cooldown</th>
-        <th>Last error</th>
-        <th>Actions</th>
-      </tr>
-    </thead>
-    <tbody>
-      {{range .Accounts}}
-      <tr>
-        <td>{{.Email}}<br><span class="muted">{{.ID}}</span></td>
-        <td>{{.Status}}</td>
-        <td>{{.PlanType}}</td>
-        <td>
-          Primary: {{usageWindow .Usage.Primary}}<br>
-          Secondary: {{usageWindow .Usage.Secondary}}<br>
-          <span class="muted">Fetched: {{ago .Usage.LastFetched}}{{if .Usage.LastError}} · {{.Usage.LastError}}{{end}}</span>
-        </td>
-        <td>{{credits .Usage.Credits}}</td>
-        <td>{{if .LastSelectedAt}}{{.LastSelectedAt}}{{else}}never{{end}}</td>
-        <td>{{if .CooldownUntil}}{{.CooldownUntil}}{{else}}none{{end}}</td>
-        <td>{{.LastError}}</td>
-        <td>
-          <div class="actions">
-            <form method="post" action="/account/switch"><input type="hidden" name="id" value="{{.ID}}"><button class="primary">Move to Top</button></form>
-            {{if .Paused}}
-            <form method="post" action="/account/resume"><input type="hidden" name="id" value="{{.ID}}"><button>Resume</button></form>
-            {{else}}
-            <form method="post" action="/account/pause"><input type="hidden" name="id" value="{{.ID}}"><button>Pause</button></form>
-            {{end}}
-            <form method="post" action="/usage/refresh"><input type="hidden" name="id" value="{{.ID}}"><button>Limits</button></form>
-            <form method="post" action="/account/delete"><input type="hidden" name="id" value="{{.ID}}"><button>Remove</button></form>
-          </div>
-        </td>
-      </tr>
-      {{else}}
-      <tr><td colspan="9">No accounts yet. Add one to start swapping Codex traffic.</td></tr>
-      {{end}}
-    </tbody>
-  </table>
+  <div class="accounts-list">
+    {{range .Accounts}}
+    <section class="account-row">
+      <div class="account-main">
+        <strong>{{.Account.Email}}</strong>
+        <div class="account-id muted">{{.Account.ID}}</div>
+        <div>
+          <span class="pill">{{.Account.Status}}</span>
+          <span class="pill">{{.Account.PlanType}}</span>
+          <span class="pill">credits {{.Credits}}</span>
+        </div>
+      </div>
+      <div>
+        <div class="metric">
+          <div class="metric-line"><strong>Primary</strong><span>{{.PrimaryLeft}}% left · {{.PrimaryUsed}}% used</span></div>
+          {{if .HasPrimary}}<div class="bar"><span style="width: {{.PrimaryLeftValue}}%"></span></div>{{end}}
+          <span class="muted">resets {{.PrimaryReset}}</span>
+        </div>
+        <div class="metric">
+          <div class="metric-line"><strong>Secondary</strong><span>{{.SecondaryLeft}}% left · {{.SecondaryUsed}}% used</span></div>
+          <span class="muted">resets {{.SecondaryReset}}</span>
+        </div>
+      </div>
+      <div>
+        <div><span class="muted">last selected</span><br>{{.LastSelected}}</div>
+        <div><span class="muted">cooldown</span><br>{{.Cooldown}}</div>
+        <div><span class="muted">fetched</span><br>{{.Fetched}}</div>
+      </div>
+      <div class="stack">
+        <div class="actions">
+          <form method="post" action="/account/switch"><input type="hidden" name="id" value="{{.Account.ID}}"><button class="primary">Move to Top</button></form>
+          {{if .Account.Paused}}
+          <form method="post" action="/account/resume"><input type="hidden" name="id" value="{{.Account.ID}}"><button>Resume</button></form>
+          {{else}}
+          <form method="post" action="/account/pause"><input type="hidden" name="id" value="{{.Account.ID}}"><button>Pause</button></form>
+          {{end}}
+          <form method="post" action="/usage/refresh"><input type="hidden" name="id" value="{{.Account.ID}}"><button>Limits</button></form>
+          <form method="post" action="/account/delete"><input type="hidden" name="id" value="{{.Account.ID}}"><button>Remove</button></form>
+        </div>
+        {{if .Account.LastError}}<div class="error-text"><span class="muted">last error</span><br>{{.Account.LastError}}</div>{{end}}
+        {{if .Account.Usage.LastError}}<div class="error-text"><span class="muted">usage error</span><br>{{.Account.Usage.LastError}}</div>{{end}}
+      </div>
+    </section>
+    {{else}}
+    <section class="account-row">No accounts yet. Add one to start swapping Codex traffic.</section>
+    {{end}}
+  </div>
 
   <h2>Codex Provider Config</h2>
   <div class="actions">
