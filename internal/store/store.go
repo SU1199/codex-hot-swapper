@@ -151,20 +151,19 @@ func (s *Store) DeleteAccount(id string) error {
 func (s *Store) PreferAccount(id string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	now := time.Now().UTC()
-	preferredAt := time.Unix(0, 0).UTC()
-	found := false
-	for i := range s.Accounts {
-		if s.Accounts[i].ID == id {
-			s.Accounts[i].LastSelectedAt = &preferredAt
-			found = true
-			continue
+	index := -1
+	for i, acct := range s.Accounts {
+		if acct.ID == id {
+			index = i
+			break
 		}
-		s.Accounts[i].LastSelectedAt = &now
 	}
-	if !found {
+	if index < 0 {
 		return fmt.Errorf("account not found: %s", id)
 	}
+	selected := s.Accounts[index]
+	copy(s.Accounts[1:index+1], s.Accounts[:index])
+	s.Accounts[0] = selected
 	s.Runtime.Sticky = map[string]string{}
 	if err := s.saveAccountsLocked(); err != nil {
 		return err

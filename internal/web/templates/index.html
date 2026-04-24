@@ -35,6 +35,7 @@
   {{if .Error}}<div class="error">{{.Error}}</div>{{end}}
 
   <h2>Accounts</h2>
+  <p class="muted">Accounts are used from top to bottom. The first available account keeps handling new traffic until it is paused, cooling down, deactivated, rate-limited, or quota-limited.</p>
   <table>
     <thead>
       <tr>
@@ -66,7 +67,7 @@
         <td>{{.LastError}}</td>
         <td>
           <div class="actions">
-            <form method="post" action="/account/switch"><input type="hidden" name="id" value="{{.ID}}"><button class="primary">Make Active</button></form>
+            <form method="post" action="/account/switch"><input type="hidden" name="id" value="{{.ID}}"><button class="primary">Move to Top</button></form>
             {{if .Paused}}
             <form method="post" action="/account/resume"><input type="hidden" name="id" value="{{.ID}}"><button>Resume</button></form>
             {{else}}

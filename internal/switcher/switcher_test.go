@@ -42,3 +42,33 @@ func TestStickySelection(t *testing.T) {
 		t.Fatalf("selected %s", selected.ID)
 	}
 }
+
+func TestSelectDrainsFirstAvailableAccount(t *testing.T) {
+	st, err := store.Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = st.UpsertAccount(accounts.Account{ID: "a", AccessToken: "a", RefreshToken: "r", Status: accounts.StatusActive})
+	_ = st.UpsertAccount(accounts.Account{ID: "b", AccessToken: "a", RefreshToken: "r", Status: accounts.StatusActive})
+
+	sw := New(st)
+	for i := 0; i < 3; i++ {
+		selected, err := sw.Select("", nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if selected.ID != "a" {
+			t.Fatalf("selected %s on attempt %d", selected.ID, i+1)
+		}
+		sw.RecordSuccess(selected.ID)
+	}
+
+	sw.RecordFailure("a", accounts.StatusRateLimited, "limit", time.Hour)
+	selected, err := sw.Select("", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if selected.ID != "b" {
+		t.Fatalf("selected %s after first account became unavailable", selected.ID)
+	}
+}

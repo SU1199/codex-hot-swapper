@@ -45,31 +45,17 @@ func (b *Switcher) Select(stickyKey string, exclude map[string]bool) (accounts.A
 		}
 	}
 
-	var selected *accounts.Account
 	for i := range accts {
 		acct := accts[i]
 		if exclude[acct.ID] || !acct.Available(now) {
 			continue
 		}
-		if selected == nil {
-			selected = &acct
-			continue
+		if stickyKey != "" {
+			_ = b.store.SetSticky(stickyKey, acct.ID)
 		}
-		if acct.LastSelectedAt == nil {
-			selected = &acct
-			continue
-		}
-		if selected.LastSelectedAt != nil && acct.LastSelectedAt.Before(*selected.LastSelectedAt) {
-			selected = &acct
-		}
+		return acct, nil
 	}
-	if selected == nil {
-		return accounts.Account{}, errors.New("no active accounts available")
-	}
-	if stickyKey != "" {
-		_ = b.store.SetSticky(stickyKey, selected.ID)
-	}
-	return *selected, nil
+	return accounts.Account{}, errors.New("no active accounts available")
 }
 
 func (b *Switcher) RecordSuccess(id string) {

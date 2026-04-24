@@ -4,7 +4,6 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
-	"time"
 
 	"codex-hot-swapper/internal/accounts"
 )
@@ -38,17 +37,18 @@ func TestStoreCorruptAccountsFails(t *testing.T) {
 	}
 }
 
-func TestPreferAccountBiasesSelectionAndClearsSticky(t *testing.T) {
+func TestPreferAccountMovesAccountFirstAndClearsSticky(t *testing.T) {
 	st, err := Open(t.TempDir())
 	if err != nil {
 		t.Fatal(err)
 	}
-	first := time.Now().UTC().Add(-time.Hour)
-	second := time.Now().UTC().Add(-2 * time.Hour)
-	if err := st.UpsertAccount(accounts.Account{ID: "a", LastSelectedAt: &first}); err != nil {
+	if err := st.UpsertAccount(accounts.Account{ID: "a"}); err != nil {
 		t.Fatal(err)
 	}
-	if err := st.UpsertAccount(accounts.Account{ID: "b", LastSelectedAt: &second}); err != nil {
+	if err := st.UpsertAccount(accounts.Account{ID: "b"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.UpsertAccount(accounts.Account{ID: "c"}); err != nil {
 		t.Fatal(err)
 	}
 	if err := st.SetSticky("session:1", "a"); err != nil {
@@ -63,12 +63,11 @@ func TestPreferAccountBiasesSelectionAndClearsSticky(t *testing.T) {
 	if len(runtime.Sticky) != 0 {
 		t.Fatalf("expected sticky mappings to be cleared, got %#v", runtime.Sticky)
 	}
-	for _, acct := range accts {
-		if acct.ID == "b" && (acct.LastSelectedAt == nil || !acct.LastSelectedAt.Equal(time.Unix(0, 0).UTC())) {
-			t.Fatalf("preferred account was not marked oldest: %#v", acct.LastSelectedAt)
-		}
-		if acct.ID == "a" && (acct.LastSelectedAt == nil || !acct.LastSelectedAt.After(time.Unix(0, 0).UTC())) {
-			t.Fatalf("other account was not moved after preferred account: %#v", acct.LastSelectedAt)
+	got := []string{accts[0].ID, accts[1].ID, accts[2].ID}
+	want := []string{"b", "a", "c"}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("account order = %v, want %v", got, want)
 		}
 	}
 }
