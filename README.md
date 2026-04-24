@@ -4,6 +4,8 @@ Codex Hot Swapper is a tiny local account switchboard for Codex. Add multiple Ch
 
 It is intentionally minimal: one Go binary, local JSON storage, OAuth login, usage refresh, sticky session continuity, and a manual **Make Active** button when you want to move the next turn to a different account.
 
+![Codex Hot Swapper application screenshot](docs/ss.png)
+
 ## Features
 
 - Local Codex-compatible provider at `http://127.0.0.1:2455/backend-api/codex`
