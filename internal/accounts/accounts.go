@@ -73,6 +73,26 @@ func (a Account) Available(now time.Time) bool {
 	if a.CooldownUntil != nil && now.Before(*a.CooldownUntil) {
 		return false
 	}
+	if a.Usage.Exhausted(now) {
+		return false
+	}
+	return true
+}
+
+func (u UsageState) Exhausted(now time.Time) bool {
+	return u.Primary.Exhausted(now) || u.Secondary.Exhausted(now)
+}
+
+func (w *UsageWindow) Exhausted(now time.Time) bool {
+	if w == nil || w.UsedPercent == nil || *w.UsedPercent < 100 {
+		return false
+	}
+	if w.ResetAt != nil && *w.ResetAt > 0 {
+		return now.Before(time.Unix(*w.ResetAt, 0))
+	}
+	if w.ResetAfterSeconds != nil && *w.ResetAfterSeconds > 0 {
+		return true
+	}
 	return true
 }
 

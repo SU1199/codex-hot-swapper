@@ -73,6 +73,33 @@ func TestSelectDrainsFirstAvailableAccount(t *testing.T) {
 	}
 }
 
+func TestSelectSkipsUsageExhaustedAccount(t *testing.T) {
+	st, err := store.Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	used := 100.0
+	resetAt := time.Now().UTC().Add(time.Hour).Unix()
+	_ = st.UpsertAccount(accounts.Account{
+		ID:           "empty",
+		AccessToken:  "a",
+		RefreshToken: "r",
+		Status:       accounts.StatusActive,
+		Usage: accounts.UsageState{
+			Primary: &accounts.UsageWindow{UsedPercent: &used, ResetAt: &resetAt},
+		},
+	})
+	_ = st.UpsertAccount(accounts.Account{ID: "ready", AccessToken: "a", RefreshToken: "r", Status: accounts.StatusActive})
+
+	selected, err := New(st).Select("", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if selected.ID != "ready" {
+		t.Fatalf("selected %s", selected.ID)
+	}
+}
+
 func TestSelectRoundRobinUsesLeastRecentlySelectedAccount(t *testing.T) {
 	st, err := store.Open(t.TempDir())
 	if err != nil {
@@ -93,5 +120,19 @@ func TestSelectRoundRobinUsesLeastRecentlySelectedAccount(t *testing.T) {
 	}
 	if selected.ID != "b" {
 		t.Fatalf("selected %s", selected.ID)
+	}
+}
+
+func TestErrorStatusRecognizesQuotaExhaustionMessages(t *testing.T) {
+	for _, body := range []string{
+		`{"error":{"message":"Your usage limit has been reached"}}`,
+		`{"error":{"code":"insufficient_quota"}}`,
+		`model limit 0 for this account`,
+		`quota exhausted`,
+	} {
+		status, cooldown, retry := ErrorStatus(400, body)
+		if status != accounts.StatusQuotaExceeded || cooldown <= 0 || !retry {
+			t.Fatalf("body %q resolved to status=%s cooldown=%s retry=%v", body, status, cooldown, retry)
+		}
 	}
 }

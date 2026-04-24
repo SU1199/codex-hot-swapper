@@ -121,11 +121,31 @@ func ErrorStatus(httpStatus int, body string) (string, time.Duration, bool) {
 		return accounts.StatusDeactivated, 0, true
 	case httpStatus == http.StatusTooManyRequests || strings.Contains(lower, "rate_limit"):
 		return accounts.StatusRateLimited, 2 * time.Minute, true
-	case strings.Contains(lower, "quota") || strings.Contains(lower, "usage_limit") || strings.Contains(lower, "usage_not_included"):
+	case isQuotaError(lower):
 		return accounts.StatusQuotaExceeded, 10 * time.Minute, true
 	case httpStatus >= 500:
 		return accounts.StatusActive, 10 * time.Second, true
 	default:
 		return accounts.StatusActive, 0, false
 	}
+}
+
+func isQuotaError(lower string) bool {
+	for _, marker := range []string{
+		"quota",
+		"usage_limit",
+		"usage limit",
+		"usage_not_included",
+		"insufficient_quota",
+		"exhausted",
+		"limit 0",
+		"limit reached",
+		"limit exceeded",
+		"exceeded your current",
+	} {
+		if strings.Contains(lower, marker) {
+			return true
+		}
+	}
+	return false
 }
