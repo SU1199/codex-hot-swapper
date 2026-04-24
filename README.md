@@ -19,6 +19,10 @@ It is intentionally minimal: one Go binary, local JSON storage, OAuth login, usa
 
 ## Quick Start
 
+Download a binary from the [latest release](https://github.com/SU1199/codex-hot-swapper/releases/latest), unzip it, and run it.
+
+Or run from source:
+
 ```bash
 go run .
 ```
@@ -97,6 +101,17 @@ The app listens only on `127.0.0.1:2455`.
 go build -o codex-hot-swapper .
 ./codex-hot-swapper
 ```
+
+## Releases
+
+Release binaries are built by GitHub Actions when a version tag is pushed:
+
+```bash
+git tag v0.1.0
+git push origin v0.1.0
+```
+
+The release includes macOS, Linux, and Windows binaries for `amd64` and `arm64`, plus SHA256 checksum files.
 
 ## Test
 

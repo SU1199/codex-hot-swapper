@@ -1,0 +1,106 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build release binaries
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - goos: darwin
+            goarch: amd64
+            ext: ""
+            archive: tar.gz
+          - goos: darwin
+            goarch: arm64
+            ext: ""
+            archive: tar.gz
+          - goos: linux
+            goarch: amd64
+            ext: ""
+            archive: tar.gz
+          - goos: linux
+            goarch: arm64
+            ext: ""
+            archive: tar.gz
+          - goos: windows
+            goarch: amd64
+            ext: ".exe"
+            archive: zip
+          - goos: windows
+            goarch: arm64
+            ext: ".exe"
+            archive: zip
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Build binary
+        env:
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+          CGO_ENABLED: "0"
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          binary="codex-hot-swapper-${GOOS}-${GOARCH}${{ matrix.ext }}"
+          go build -trimpath -ldflags="-s -w" -o "dist/${binary}" .
+
+      - name: Package archive
+        run: |
+          set -euo pipefail
+          cd dist
+          name="codex-hot-swapper-${{ matrix.goos }}-${{ matrix.goarch }}"
+          binary="${name}${{ matrix.ext }}"
+          if [ "${{ matrix.archive }}" = "zip" ]; then
+            zip "${name}.zip" "${binary}"
+          else
+            tar -czf "${name}.tar.gz" "${binary}"
+          fi
+          shasum -a 256 "${name}.${{ matrix.archive }}" > "${name}.${{ matrix.archive }}.sha256"
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: codex-hot-swapper-${{ matrix.goos }}-${{ matrix.goarch }}
+          path: |
+            dist/codex-hot-swapper-${{ matrix.goos }}-${{ matrix.goarch }}.${{ matrix.archive }}
+            dist/codex-hot-swapper-${{ matrix.goos }}-${{ matrix.goarch }}.${{ matrix.archive }}.sha256
+
+  release:
+    name: Publish GitHub release
+    needs: build
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/')
+
+    steps:
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: Publish release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            dist/*.tar.gz
+            dist/*.zip
+            dist/*.sha256
+          generate_release_notes: true
