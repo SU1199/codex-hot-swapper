@@ -42,6 +42,22 @@ func (s *Service) RefreshAll(ctx context.Context) {
 	}
 }
 
+func (s *Service) RefreshLoop(ctx context.Context, interval time.Duration) {
+	if interval <= 0 {
+		return
+	}
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			s.RefreshAll(ctx)
+		}
+	}
+}
+
 func (s *Service) RefreshAccount(ctx context.Context, id string) error {
 	accts, _, _ := s.store.Snapshot()
 	var acct accounts.Account

@@ -19,6 +19,7 @@ import (
 )
 
 const listenAddr = "127.0.0.1:2455"
+const usageRefreshInterval = 5 * time.Minute
 
 func main() {
 	st, err := store.OpenDefault()
@@ -31,7 +32,9 @@ func main() {
 	usageSvc := usage.New(st)
 	proxySvc := proxy.New(st, accountSwitcher)
 	webSvc := web.New(st, oauthSvc, usageSvc)
-	go usageSvc.RefreshAll(context.Background())
+	ctx := context.Background()
+	go usageSvc.RefreshAll(ctx)
+	go usageSvc.RefreshLoop(ctx, usageRefreshInterval)
 
 	mux := http.NewServeMux()
 	webSvc.Register(mux)

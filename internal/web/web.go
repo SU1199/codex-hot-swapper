@@ -29,6 +29,7 @@ type Web struct {
 
 type accountView struct {
 	Account          accounts.Account
+	DisplayStatus    string
 	PrimaryUsed      string
 	PrimaryLeft      string
 	PrimaryReset     string
@@ -54,6 +55,16 @@ type usageSummary struct {
 	SecondaryUsed       string
 	SecondaryLeft       string
 	SecondaryLeftValue  string
+	StrategyLabel       string
+}
+
+type requestLogView struct {
+	Time      time.Time
+	Action    string
+	AccountID string
+	Result    string
+	Attempt   int
+	Error     string
 }
 
 func New(st *store.Store, oauthSvc *oauth.Service, usageSvc *usage.Service) *Web {
@@ -91,10 +102,10 @@ func (w *Web) index(rw http.ResponseWriter, r *http.Request) {
 	accountViews := buildAccountViews(accts)
 	data := map[string]any{
 		"Accounts": accountViews,
-		"Summary":  buildUsageSummary(accts),
+		"Summary":  buildUsageSummary(accts, settings.Strategy),
 		"Settings": settings,
 		"DataDir":  w.store.Dir(),
-		"Logs":     w.store.RecentRequestLogs(25),
+		"Logs":     buildRequestLogViews(w.store.RecentRequestLogs(25)),
 		"Config":   codexconfig.Snippet(),
 		"Strategy": settings.Strategy,
 		"Notice":   r.URL.Query().Get("notice"),
@@ -234,6 +245,7 @@ func buildAccountViews(accts []accounts.Account) []accountView {
 	for _, acct := range accts {
 		view := accountView{
 			Account:        acct,
+			DisplayStatus:  displayStatus(acct),
 			PrimaryUsed:    usageUsed(acct.Usage.Primary),
 			PrimaryLeft:    usageLeft(acct.Usage.Primary),
 			PrimaryReset:   usageReset(acct.Usage.Primary),
@@ -254,8 +266,11 @@ func buildAccountViews(accts []accounts.Account) []accountView {
 	return out
 }
 
-func buildUsageSummary(accts []accounts.Account) usageSummary {
-	summary := usageSummary{AccountCount: len(accts)}
+func buildUsageSummary(accts []accounts.Account, strategy string) usageSummary {
+	summary := usageSummary{AccountCount: len(accts), StrategyLabel: "Use first"}
+	if strategy == store.StrategyRoundRobin {
+		summary.StrategyLabel = "Share"
+	}
 	var primaryUsed float64
 	var secondaryUsed float64
 	now := time.Now().UTC()
@@ -295,6 +310,67 @@ func buildUsageSummary(accts []accounts.Account) usageSummary {
 		summary.SecondaryLeftValue = "0"
 	}
 	return summary
+}
+
+func buildRequestLogViews(entries []store.RequestLogEntry) []requestLogView {
+	out := make([]requestLogView, 0, len(entries))
+	for _, entry := range entries {
+		out = append(out, requestLogView{
+			Time:      entry.Time,
+			Action:    displayAction(entry.Path),
+			AccountID: entry.AccountID,
+			Result:    displayResult(entry.Status, entry.Error),
+			Attempt:   entry.Attempt,
+			Error:     entry.Error,
+		})
+	}
+	return out
+}
+
+func displayAction(path string) string {
+	switch {
+	case strings.Contains(path, "compact"):
+		return "Shorten"
+	case strings.Contains(path, "responses"):
+		return "Request"
+	case strings.Contains(path, "models"):
+		return "Models"
+	default:
+		return "Check"
+	}
+}
+
+func displayResult(status int, err string) string {
+	if err != "" {
+		return "Problem"
+	}
+	if status == 0 {
+		return "Started"
+	}
+	if status >= 200 && status < 400 {
+		return "OK"
+	}
+	return strconv.Itoa(status)
+}
+
+func displayStatus(acct accounts.Account) string {
+	if acct.Paused {
+		return "Paused"
+	}
+	switch acct.Status {
+	case accounts.StatusActive:
+		return "Ready"
+	case accounts.StatusRateLimited:
+		return "Waiting"
+	case accounts.StatusQuotaExceeded:
+		return "Empty"
+	case accounts.StatusDeactivated:
+		return "Needs login"
+	case "":
+		return "Ready"
+	default:
+		return acct.Status
+	}
 }
 
 func usageUsed(win *accounts.UsageWindow) string {

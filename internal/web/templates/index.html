@@ -36,6 +36,8 @@
     .pill { display: inline-block; border: 1px solid #151515; padding: 2px 6px; margin: 0 4px 4px 0; background: #f0eee6; }
     .metric { display: grid; gap: 3px; margin-bottom: 8px; }
     .metric-line { display: flex; justify-content: space-between; gap: 12px; }
+    details { margin-top: 28px; }
+    summary { cursor: pointer; font-weight: 700; }
     @media (max-width: 980px) {
       .summary-grid, .account-row { grid-template-columns: 1fr; }
       header { display: grid; }
@@ -46,10 +48,10 @@
   <header>
     <div>
       <h1>Codex Hot Swapper</h1>
-      <div class="muted">Listening on http://127.0.0.1:2455 · Data: {{.DataDir}}</div>
+      <div class="muted">Ready at http://127.0.0.1:2455</div>
     </div>
     <div class="actions">
-      <form method="post" action="/usage/refresh-all"><button>Refresh Limits</button></form>
+      <form method="post" action="/usage/refresh-all"><button>Check All</button></form>
       <a class="button" href="/oauth/start">Add Account</a>
     </div>
   </header>
@@ -58,16 +60,16 @@
 
   <section class="summary-grid" aria-label="Combined usage">
     <div class="summary-box">
-      <span class="muted">Primary pool left</span>
+      <span class="muted">Main left</span>
       <strong>{{.Summary.PrimaryLeft}}%</strong>
       <div class="bar"><span style="width: {{.Summary.PrimaryLeftValue}}%"></span></div>
-      <div class="muted">{{.Summary.PrimaryUsed}}% used · {{.Summary.KnownPrimaryCount}} measured</div>
+      <div class="muted">{{.Summary.KnownPrimaryCount}} accounts checked</div>
     </div>
     <div class="summary-box">
-      <span class="muted">Secondary pool left</span>
+      <span class="muted">Weekly left</span>
       <strong>{{.Summary.SecondaryLeft}}%</strong>
       <div class="bar"><span style="width: {{.Summary.SecondaryLeftValue}}%"></span></div>
-      <div class="muted">{{.Summary.SecondaryUsed}}% used · {{.Summary.KnownSecondaryCount}} measured</div>
+      <div class="muted">{{.Summary.KnownSecondaryCount}} accounts checked</div>
     </div>
     <div class="summary-box">
       <span class="muted">Accounts</span>
@@ -75,9 +77,9 @@
       <div class="muted">available right now</div>
     </div>
     <div class="summary-box">
-      <span class="muted">Strategy</span>
-      <strong>{{if eq .Strategy "round_robin"}}Round robin{{else}}Drain order{{end}}</strong>
-      <div class="muted">sticky sessions preserved while healthy</div>
+      <span class="muted">Mode</span>
+      <strong>{{.Summary.StrategyLabel}}</strong>
+      <div class="muted">choose how accounts are used</div>
     </div>
   </section>
 
@@ -85,11 +87,11 @@
   <form method="post" action="/settings/strategy" class="strategy-options">
     <label class="strategy-option">
       <input type="radio" name="strategy" value="drain_order" {{if eq .Strategy "drain_order"}}checked{{end}} onchange="this.form.submit()">
-      <span><strong>Drain order</strong><span class="muted">Use accounts from top to bottom. The first available account keeps handling new traffic until it is paused, cooling down, deactivated, rate-limited, or quota-limited.</span></span>
+      <span><strong>Use first</strong><span class="muted">Keep using the top account until it is empty, then move down.</span></span>
     </label>
     <label class="strategy-option">
       <input type="radio" name="strategy" value="round_robin" {{if eq .Strategy "round_robin"}}checked{{end}} onchange="this.form.submit()">
-      <span><strong>Round robin</strong><span class="muted">Spread new traffic across available accounts by picking the account used least recently. Sticky Codex sessions still stay on their mapped account while it is healthy.</span></span>
+      <span><strong>Share</strong><span class="muted">Spread new work across ready accounts.</span></span>
     </label>
     <noscript><button>Save Strategy</button></noscript>
   </form>
@@ -100,40 +102,40 @@
         <strong>{{.Account.Email}}</strong>
         <div class="account-id muted">{{.Account.ID}}</div>
         <div>
-          <span class="pill">{{.Account.Status}}</span>
+          <span class="pill">{{.DisplayStatus}}</span>
           <span class="pill">{{.Account.PlanType}}</span>
-          <span class="pill">credits {{.Credits}}</span>
+          <span class="pill">{{.Credits}}</span>
         </div>
       </div>
       <div>
         <div class="metric">
-          <div class="metric-line"><strong>Primary</strong><span>{{.PrimaryLeft}}% left · {{.PrimaryUsed}}% used</span></div>
+          <div class="metric-line"><strong>Main</strong><span>{{.PrimaryLeft}}% left</span></div>
           {{if .HasPrimary}}<div class="bar"><span style="width: {{.PrimaryLeftValue}}%"></span></div>{{end}}
           <span class="muted">resets {{.PrimaryReset}}</span>
         </div>
         <div class="metric">
-          <div class="metric-line"><strong>Secondary</strong><span>{{.SecondaryLeft}}% left · {{.SecondaryUsed}}% used</span></div>
+          <div class="metric-line"><strong>Weekly</strong><span>{{.SecondaryLeft}}% left</span></div>
           <span class="muted">resets {{.SecondaryReset}}</span>
         </div>
       </div>
       <div>
-        <div><span class="muted">last selected</span><br>{{.LastSelected}}</div>
-        <div><span class="muted">cooldown</span><br>{{.Cooldown}}</div>
-        <div><span class="muted">fetched</span><br>{{.Fetched}}</div>
+        <div><span class="muted">last used</span><br>{{.LastSelected}}</div>
+        <div><span class="muted">wait until</span><br>{{.Cooldown}}</div>
+        <div><span class="muted">checked</span><br>{{.Fetched}}</div>
       </div>
       <div class="stack">
         <div class="actions">
-          <form method="post" action="/account/switch"><input type="hidden" name="id" value="{{.Account.ID}}"><button class="primary">Move to Top</button></form>
+          <form method="post" action="/account/switch"><input type="hidden" name="id" value="{{.Account.ID}}"><button class="primary">Use Now</button></form>
           {{if .Account.Paused}}
           <form method="post" action="/account/resume"><input type="hidden" name="id" value="{{.Account.ID}}"><button>Resume</button></form>
           {{else}}
           <form method="post" action="/account/pause"><input type="hidden" name="id" value="{{.Account.ID}}"><button>Pause</button></form>
           {{end}}
-          <form method="post" action="/usage/refresh"><input type="hidden" name="id" value="{{.Account.ID}}"><button>Limits</button></form>
+          <form method="post" action="/usage/refresh"><input type="hidden" name="id" value="{{.Account.ID}}"><button>Check</button></form>
           <form method="post" action="/account/delete"><input type="hidden" name="id" value="{{.Account.ID}}"><button>Remove</button></form>
         </div>
-        {{if .Account.LastError}}<div class="error-text"><span class="muted">last error</span><br>{{.Account.LastError}}</div>{{end}}
-        {{if .Account.Usage.LastError}}<div class="error-text"><span class="muted">usage error</span><br>{{.Account.Usage.LastError}}</div>{{end}}
+        {{if .Account.LastError}}<div class="error-text"><span class="muted">problem</span><br>{{.Account.LastError}}</div>{{end}}
+        {{if .Account.Usage.LastError}}<div class="error-text"><span class="muted">check failed</span><br>{{.Account.Usage.LastError}}</div>{{end}}
       </div>
     </section>
     {{else}}
@@ -141,36 +143,38 @@
     {{end}}
   </div>
 
-  <h2>Codex Provider Config</h2>
-  <div class="actions">
-    <form method="post" action="/codex-config/install"><button class="primary">Install Codex Config</button></form>
-  </div>
-  <pre>{{.Config}}</pre>
+  <details>
+    <summary>Setup</summary>
+    <div class="actions">
+      <form method="post" action="/codex-config/install"><button class="primary">Set Up Codex</button></form>
+    </div>
+    <pre>{{.Config}}</pre>
+  </details>
 
-  <h2>Recent Swaps</h2>
+  <h2>History</h2>
   <table>
     <thead>
       <tr>
         <th>Time</th>
-        <th>Path</th>
+        <th>Action</th>
         <th>Account</th>
-        <th>Status</th>
-        <th>Attempt</th>
-        <th>Error</th>
+        <th>Result</th>
+        <th>Try</th>
+        <th>Problem</th>
       </tr>
     </thead>
     <tbody>
       {{range .Logs}}
       <tr>
         <td>{{.Time}}</td>
-        <td>{{.Path}}</td>
+        <td>{{.Action}}</td>
         <td>{{.AccountID}}</td>
-        <td>{{.Status}}</td>
+        <td>{{.Result}}</td>
         <td>{{.Attempt}}</td>
         <td>{{.Error}}</td>
       </tr>
       {{else}}
-      <tr><td colspan="6">No proxied requests logged yet.</td></tr>
+      <tr><td colspan="6">No activity yet.</td></tr>
       {{end}}
     </tbody>
   </table>
