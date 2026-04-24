@@ -15,6 +15,9 @@
     pre { background: #f0eee6; padding: 12px; overflow: auto; }
     .muted { color: #69665d; }
     .actions { display: flex; gap: 6px; flex-wrap: wrap; }
+    .notice, .error { margin: 18px 0; padding: 10px 12px; border: 1px solid; }
+    .notice { border-color: #6b7f3f; background: #f1f6e8; }
+    .error { border-color: #9b3d32; background: #fbebe8; }
   </style>
 </head>
 <body>
@@ -28,6 +31,8 @@
       <a class="button" href="/oauth/start">Add Account</a>
     </div>
   </header>
+  {{if .Notice}}<div class="notice">{{.Notice}}</div>{{end}}
+  {{if .Error}}<div class="error">{{.Error}}</div>{{end}}
 
   <h2>Accounts</h2>
   <table>
@@ -79,6 +84,9 @@
   </table>
 
   <h2>Codex Provider Config</h2>
+  <div class="actions">
+    <form method="post" action="/codex-config/install"><button class="primary">Install Codex Config</button></form>
+  </div>
   <pre>{{.Config}}</pre>
 
   <h2>Recent Swaps</h2>

@@ -5,11 +5,13 @@ import (
 	_ "embed"
 	"html/template"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 	"time"
 
 	"codex-hot-swapper/internal/accounts"
+	"codex-hot-swapper/internal/codexconfig"
 	"codex-hot-swapper/internal/oauth"
 	"codex-hot-swapper/internal/store"
 	"codex-hot-swapper/internal/usage"
@@ -47,6 +49,7 @@ func (w *Web) Register(mux *http.ServeMux) {
 	mux.HandleFunc("/account/delete", w.delete)
 	mux.HandleFunc("/usage/refresh", w.refreshUsage)
 	mux.HandleFunc("/usage/refresh-all", w.refreshAllUsage)
+	mux.HandleFunc("/codex-config/install", w.installCodexConfig)
 }
 
 func (w *Web) index(rw http.ResponseWriter, r *http.Request) {
@@ -60,14 +63,9 @@ func (w *Web) index(rw http.ResponseWriter, r *http.Request) {
 		"Settings": settings,
 		"DataDir":  w.store.Dir(),
 		"Logs":     w.store.RecentRequestLogs(25),
-		"Config": `model_provider = "codex-hot-swapper"
-
-[model_providers.codex-hot-swapper]
-name = "OpenAI"
-base_url = "http://127.0.0.1:2455/backend-api/codex"
-wire_api = "responses"
-supports_websockets = true
-requires_openai_auth = true`,
+		"Config":   codexconfig.Snippet(),
+		"Notice":   r.URL.Query().Get("notice"),
+		"Error":    r.URL.Query().Get("error"),
 	}
 	rw.Header().Set("Content-Type", "text/html; charset=utf-8")
 	_ = w.tmpl.Execute(rw, data)
@@ -103,6 +101,23 @@ func (w *Web) refreshAllUsage(rw http.ResponseWriter, r *http.Request) {
 	defer cancel()
 	w.usage.RefreshAll(ctx)
 	http.Redirect(rw, r, "/", http.StatusFound)
+}
+
+func (w *Web) installCodexConfig(rw http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(rw, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	result, err := codexconfig.InstallDefault(time.Now())
+	if err != nil {
+		http.Redirect(rw, r, "/?error="+url.QueryEscape(err.Error()), http.StatusFound)
+		return
+	}
+	message := "Updated " + result.ConfigPath
+	if result.BackupPath != "" {
+		message += " and wrote backup " + result.BackupPath
+	}
+	http.Redirect(rw, r, "/?notice="+url.QueryEscape(message), http.StatusFound)
 }
 
 func (w *Web) switchAccount(rw http.ResponseWriter, r *http.Request) {

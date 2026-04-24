@@ -24,7 +24,7 @@ go run .
 The app opens `http://127.0.0.1:2455` automatically.
 
 1. Click **Add Account** and finish the browser login.
-2. Copy the provider config shown in the UI into `~/.codex/config.toml`.
+2. Click **Install Codex Config** to update `~/.codex/config.toml`, or copy the provider config manually.
 3. Start Codex with the `codex-hot-swapper` provider.
 
 Example Codex config:
@@ -45,6 +45,21 @@ requires_openai_auth = true
 The account table includes **Make Active** for each account. Clicking it makes that account the preferred account for the next request and clears existing sticky mappings, so new Codex traffic moves to the selected account instead of staying pinned to an earlier one.
 
 The app still keeps conversation continuity when Codex sends session headers. If you need to force a move mid-session, use **Make Active** before the next request.
+
+## Codex Config Installer
+
+The UI includes **Install Codex Config**. It updates only the minimal settings needed for this tool:
+
+- sets top-level `model_provider = "codex-hot-swapper"`;
+- replaces this tool's `[model_providers.codex-hot-swapper]` block if it already exists;
+- appends the provider block if missing;
+- preserves unrelated settings, profiles, and provider blocks.
+
+Before writing, it creates a timestamped backup next to the config file:
+
+```text
+~/.codex/config.toml.bak-YYYYMMDD-HHMMSS
+```
 
 ## Token Refresh
 
