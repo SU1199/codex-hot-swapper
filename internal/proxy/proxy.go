@@ -113,7 +113,8 @@ func (p *Proxy) forwardHTTP(w http.ResponseWriter, r *http.Request, upstreamPath
 	sticky := switcher.StickyKey(r)
 	exclude := map[string]bool{}
 	var lastErr error
-	for attempt := 0; attempt < 3; attempt++ {
+	maxAttempts := p.maxAttempts()
+	for attempt := 0; attempt < maxAttempts; attempt++ {
 		acct, err := p.switcher.Select(sticky, exclude)
 		if err != nil {
 			log.Printf("proxy select failed path=%s error=%s", upstreamPath, err)
@@ -140,7 +141,7 @@ func (p *Proxy) forwardHTTP(w http.ResponseWriter, r *http.Request, upstreamPath
 			lastErr = err
 			continue
 		}
-		if resp.StatusCode == http.StatusUnauthorized && attempt == 0 {
+		if resp.StatusCode == http.StatusUnauthorized {
 			_ = resp.Body.Close()
 			refreshed, refreshErr := p.ensureFresh(r.Context(), acct, true)
 			if refreshErr == nil {
@@ -159,7 +160,7 @@ func (p *Proxy) forwardHTTP(w http.ResponseWriter, r *http.Request, upstreamPath
 			log.Printf("proxy upstream status path=%s account=%s status=%d retry=%v", upstreamPath, acct.ID, resp.StatusCode, retry)
 			p.store.AppendRequestLog(store.RequestLogEntry{Time: time.Now().UTC(), AccountID: acct.ID, Path: upstreamPath, Status: resp.StatusCode, Error: strings.TrimSpace(string(data)), Attempt: attempt + 1})
 			p.switcher.RecordFailure(acct.ID, status, strings.TrimSpace(string(data)), cooldown)
-			if retry && attempt < 2 {
+			if retry && attempt < maxAttempts-1 {
 				exclude[acct.ID] = true
 				lastErr = errors.New(resp.Status)
 				continue
@@ -187,6 +188,14 @@ func (p *Proxy) forwardHTTP(w http.ResponseWriter, r *http.Request, upstreamPath
 	}
 	log.Printf("proxy exhausted path=%s error=%s", upstreamPath, lastErr)
 	http.Error(w, lastErr.Error(), http.StatusBadGateway)
+}
+
+func (p *Proxy) maxAttempts() int {
+	accts, _, _ := p.store.Snapshot()
+	if len(accts) == 0 {
+		return 1
+	}
+	return len(accts)
 }
 
 func (p *Proxy) doUpstream(ctx context.Context, inbound *http.Request, upstreamPath string, body []byte, acct accounts.Account) (*http.Response, error) {
@@ -283,30 +292,10 @@ func streamCopy(w http.ResponseWriter, r io.Reader) {
 func (p *Proxy) responsesWebSocket(w http.ResponseWriter, r *http.Request) {
 	log.Printf("proxy websocket path=%s remote=%s", r.URL.Path, r.RemoteAddr)
 	sticky := switcher.StickyKey(r)
-	acct, err := p.switcher.Select(sticky, nil)
-	if err != nil {
-		log.Printf("proxy websocket select failed error=%s", err)
-		p.store.AppendRequestLog(store.RequestLogEntry{Time: time.Now().UTC(), Path: "/codex/responses", Error: err.Error()})
-		http.Error(w, err.Error(), http.StatusServiceUnavailable)
-		return
-	}
-	acct, err = p.ensureFresh(r.Context(), acct, false)
-	if err != nil {
-		log.Printf("proxy websocket refresh failed account=%s error=%s", acct.ID, err)
-		p.store.AppendRequestLog(store.RequestLogEntry{Time: time.Now().UTC(), AccountID: acct.ID, Path: "/codex/responses", Error: err.Error()})
-		http.Error(w, err.Error(), http.StatusBadGateway)
-		return
-	}
-	down, err := (&websocket.Upgrader{CheckOrigin: func(*http.Request) bool { return true }}).Upgrade(w, r, nil)
-	if err != nil {
-		return
-	}
-	defer down.Close()
-
 	_, settings, _ := p.store.Snapshot()
 	u, err := url.Parse(strings.TrimRight(settings.UpstreamBaseURL, "/") + "/codex/responses")
 	if err != nil {
-		_ = down.WriteMessage(websocket.CloseMessage, websocket.FormatCloseMessage(websocket.CloseInternalServerErr, err.Error()))
+		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 	if u.Scheme == "https" {
@@ -314,16 +303,60 @@ func (p *Proxy) responsesWebSocket(w http.ResponseWriter, r *http.Request) {
 	} else {
 		u.Scheme = "ws"
 	}
-	header := upstreamHeaders(r.Header, acct.AccessToken, acct.ChatGPTAccount, true)
-	up, _, err := websocket.DefaultDialer.DialContext(r.Context(), u.String(), header)
+
+	exclude := map[string]bool{}
+	var acct accounts.Account
+	var up *websocket.Conn
+	var lastErr error
+	maxAttempts := p.maxAttempts()
+	for attempt := 0; attempt < maxAttempts; attempt++ {
+		acct, err = p.switcher.Select(sticky, exclude)
+		if err != nil {
+			log.Printf("proxy websocket select failed error=%s", err)
+			p.store.AppendRequestLog(store.RequestLogEntry{Time: time.Now().UTC(), Path: "/codex/responses", Error: err.Error(), Attempt: attempt + 1})
+			http.Error(w, err.Error(), http.StatusServiceUnavailable)
+			return
+		}
+		acct, err = p.ensureFresh(r.Context(), acct, false)
+		if err != nil {
+			log.Printf("proxy websocket refresh failed account=%s error=%s", acct.ID, err)
+			p.store.AppendRequestLog(store.RequestLogEntry{Time: time.Now().UTC(), AccountID: acct.ID, Path: "/codex/responses", Error: err.Error(), Attempt: attempt + 1})
+			p.switcher.RecordFailure(acct.ID, accounts.StatusDeactivated, err.Error(), 0)
+			exclude[acct.ID] = true
+			lastErr = err
+			continue
+		}
+		header := upstreamHeaders(r.Header, acct.AccessToken, acct.ChatGPTAccount, true)
+		var resp *http.Response
+		up, resp, err = websocket.DefaultDialer.DialContext(r.Context(), u.String(), header)
+		if err == nil {
+			break
+		}
+		status, cooldown, retry, message := websocketDialFailure(resp, err)
+		log.Printf("proxy websocket upstream failed account=%s retry=%v error=%s", acct.ID, retry, message)
+		p.switcher.RecordFailure(acct.ID, status, message, cooldown)
+		p.store.AppendRequestLog(store.RequestLogEntry{Time: time.Now().UTC(), AccountID: acct.ID, Path: "/codex/responses", Status: responseStatus(resp), Error: message, Attempt: attempt + 1})
+		lastErr = errors.New(message)
+		if retry && attempt < maxAttempts-1 {
+			exclude[acct.ID] = true
+			continue
+		}
+		break
+	}
 	if err != nil {
-		log.Printf("proxy websocket upstream failed account=%s error=%s", acct.ID, err)
-		p.switcher.RecordFailure(acct.ID, accounts.StatusActive, err.Error(), 10*time.Second)
-		p.store.AppendRequestLog(store.RequestLogEntry{Time: time.Now().UTC(), AccountID: acct.ID, Path: "/codex/responses", Error: err.Error()})
-		_ = down.WriteMessage(websocket.CloseMessage, websocket.FormatCloseMessage(websocket.CloseTryAgainLater, err.Error()))
+		if lastErr == nil {
+			lastErr = err
+		}
+		http.Error(w, lastErr.Error(), http.StatusBadGateway)
 		return
 	}
 	defer up.Close()
+
+	down, err := (&websocket.Upgrader{CheckOrigin: func(*http.Request) bool { return true }}).Upgrade(w, r, nil)
+	if err != nil {
+		return
+	}
+	defer down.Close()
 	p.switcher.RecordSuccess(acct.ID)
 	log.Printf("proxy websocket connected account=%s", acct.ID)
 	p.store.AppendRequestLog(store.RequestLogEntry{Time: time.Now().UTC(), AccountID: acct.ID, Path: "/codex/responses", Status: http.StatusSwitchingProtocols})
@@ -332,6 +365,27 @@ func (p *Proxy) responsesWebSocket(w http.ResponseWriter, r *http.Request) {
 	go relayWS(up, down, errc)
 	go relayWS(down, up, errc)
 	<-errc
+}
+
+func websocketDialFailure(resp *http.Response, err error) (string, time.Duration, bool, string) {
+	if resp == nil {
+		return accounts.StatusActive, 10 * time.Second, true, err.Error()
+	}
+	defer resp.Body.Close()
+	data, _ := io.ReadAll(io.LimitReader(resp.Body, 4<<20))
+	message := strings.TrimSpace(string(data))
+	if message == "" {
+		message = err.Error()
+	}
+	status, cooldown, retry := switcher.ErrorStatus(resp.StatusCode, message)
+	return status, cooldown, retry, message
+}
+
+func responseStatus(resp *http.Response) int {
+	if resp == nil {
+		return 0
+	}
+	return resp.StatusCode
 }
 
 func relayWS(dst, src *websocket.Conn, errc chan<- error) {
