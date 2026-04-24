@@ -1,0 +1,112 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Codex Hot Swapper</title>
+  <style>
+    body { font-family: system-ui, -apple-system, BlinkMacSystemFont, sans-serif; margin: 32px; color: #151515; background: #fbfbf8; }
+    header { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+    table { width: 100%; border-collapse: collapse; margin-top: 18px; }
+    th, td { border-bottom: 1px solid #dedbd1; padding: 8px; text-align: left; vertical-align: top; }
+    th { background: #f0eee6; }
+    button, .button { border: 1px solid #151515; background: #fff; color: #151515; padding: 6px 10px; text-decoration: none; cursor: pointer; }
+    button.primary { background: #151515; color: #fff; }
+    pre { background: #f0eee6; padding: 12px; overflow: auto; }
+    .muted { color: #69665d; }
+    .actions { display: flex; gap: 6px; flex-wrap: wrap; }
+  </style>
+</head>
+<body>
+  <header>
+    <div>
+      <h1>Codex Hot Swapper</h1>
+      <div class="muted">Listening on http://127.0.0.1:2455 · Data: {{.DataDir}}</div>
+    </div>
+    <div class="actions">
+      <form method="post" action="/usage/refresh-all"><button>Refresh Limits</button></form>
+      <a class="button" href="/oauth/start">Add Account</a>
+    </div>
+  </header>
+
+  <h2>Accounts</h2>
+  <table>
+    <thead>
+      <tr>
+        <th>Email</th>
+        <th>Status</th>
+        <th>Plan</th>
+        <th>Limits</th>
+        <th>Credits</th>
+        <th>Last selected</th>
+        <th>Cooldown</th>
+        <th>Last error</th>
+        <th>Actions</th>
+      </tr>
+    </thead>
+    <tbody>
+      {{range .Accounts}}
+      <tr>
+        <td>{{.Email}}<br><span class="muted">{{.ID}}</span></td>
+        <td>{{.Status}}</td>
+        <td>{{.PlanType}}</td>
+        <td>
+          Primary: {{usageWindow .Usage.Primary}}<br>
+          Secondary: {{usageWindow .Usage.Secondary}}<br>
+          <span class="muted">Fetched: {{ago .Usage.LastFetched}}{{if .Usage.LastError}} · {{.Usage.LastError}}{{end}}</span>
+        </td>
+        <td>{{credits .Usage.Credits}}</td>
+        <td>{{if .LastSelectedAt}}{{.LastSelectedAt}}{{else}}never{{end}}</td>
+        <td>{{if .CooldownUntil}}{{.CooldownUntil}}{{else}}none{{end}}</td>
+        <td>{{.LastError}}</td>
+        <td>
+          <div class="actions">
+            <form method="post" action="/account/switch"><input type="hidden" name="id" value="{{.ID}}"><button class="primary">Make Active</button></form>
+            {{if .Paused}}
+            <form method="post" action="/account/resume"><input type="hidden" name="id" value="{{.ID}}"><button>Resume</button></form>
+            {{else}}
+            <form method="post" action="/account/pause"><input type="hidden" name="id" value="{{.ID}}"><button>Pause</button></form>
+            {{end}}
+            <form method="post" action="/usage/refresh"><input type="hidden" name="id" value="{{.ID}}"><button>Limits</button></form>
+            <form method="post" action="/account/delete"><input type="hidden" name="id" value="{{.ID}}"><button>Remove</button></form>
+          </div>
+        </td>
+      </tr>
+      {{else}}
+      <tr><td colspan="9">No accounts yet. Add one to start swapping Codex traffic.</td></tr>
+      {{end}}
+    </tbody>
+  </table>
+
+  <h2>Codex Provider Config</h2>
+  <pre>{{.Config}}</pre>
+
+  <h2>Recent Swaps</h2>
+  <table>
+    <thead>
+      <tr>
+        <th>Time</th>
+        <th>Path</th>
+        <th>Account</th>
+        <th>Status</th>
+        <th>Attempt</th>
+        <th>Error</th>
+      </tr>
+    </thead>
+    <tbody>
+      {{range .Logs}}
+      <tr>
+        <td>{{.Time}}</td>
+        <td>{{.Path}}</td>
+        <td>{{.AccountID}}</td>
+        <td>{{.Status}}</td>
+        <td>{{.Attempt}}</td>
+        <td>{{.Error}}</td>
+      </tr>
+      {{else}}
+      <tr><td colspan="6">No proxied requests logged yet.</td></tr>
+      {{end}}
+    </tbody>
+  </table>
+</body>
+</html>

@@ -1,0 +1,4 @@
+codex-hot-swapper
+*.test
+coverage.out
+.DS_Store
