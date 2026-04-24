@@ -43,7 +43,7 @@ model_provider = "codex-hot-swapper"
 name = "OpenAI"
 base_url = "http://127.0.0.1:2455/backend-api/codex"
 wire_api = "responses"
-supports_websockets = true
+supports_websockets = false
 requires_openai_auth = true
 ```
 
@@ -57,6 +57,8 @@ The UI offers two account strategies:
 The account table includes **Move to Top** for each account. Clicking it moves that account to the front of the priority order and clears existing sticky mappings, so new Codex traffic moves to the selected account instead of staying pinned to an earlier one.
 
 The app still keeps conversation continuity when Codex sends session headers. If you need to force a move mid-session, use **Move to Top** before the next request.
+
+Hot Swapper advertises HTTP Responses transport by default. That gives it the best chance to catch pre-acceptance limit/quota failures and try every available account before returning an error. WebSocket upgrades are still handled if a client explicitly sends one, but they are not preferred because post-handshake application errors are harder to retry transparently.
 
 ## Codex Config Installer
 

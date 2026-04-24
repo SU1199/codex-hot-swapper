@@ -14,7 +14,7 @@ const ProviderBlock = `[model_providers.codex-hot-swapper]
 name = "OpenAI"
 base_url = "http://127.0.0.1:2455/backend-api/codex"
 wire_api = "responses"
-supports_websockets = true
+supports_websockets = false
 requires_openai_auth = true`
 
 type InstallResult struct {

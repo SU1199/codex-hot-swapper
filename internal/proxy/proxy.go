@@ -71,7 +71,7 @@ func modelEntry(slug, name string) map[string]any {
 		"supported_in_api":             true,
 		"supports_reasoning_summaries": true,
 		"supports_parallel_tool_calls": true,
-		"prefer_websockets":            true,
+		"prefer_websockets":            false,
 		"context_window":               1000000,
 		"input_modalities":             []string{"text", "image"},
 		"supported_reasoning_levels": []map[string]string{
