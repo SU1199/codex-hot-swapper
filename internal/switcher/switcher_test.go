@@ -100,6 +100,33 @@ func TestSelectSkipsUsageExhaustedAccount(t *testing.T) {
 	}
 }
 
+func TestSelectSkipsAccountBelowUsageReserve(t *testing.T) {
+	st, err := store.Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	used := 95.0
+	resetAt := time.Now().UTC().Add(time.Hour).Unix()
+	_ = st.UpsertAccount(accounts.Account{
+		ID:           "almost-empty",
+		AccessToken:  "a",
+		RefreshToken: "r",
+		Status:       accounts.StatusActive,
+		Usage: accounts.UsageState{
+			Primary: &accounts.UsageWindow{UsedPercent: &used, ResetAt: &resetAt},
+		},
+	})
+	_ = st.UpsertAccount(accounts.Account{ID: "ready", AccessToken: "a", RefreshToken: "r", Status: accounts.StatusActive})
+
+	selected, err := New(st).Select("", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if selected.ID != "ready" {
+		t.Fatalf("selected %s", selected.ID)
+	}
+}
+
 func TestSelectRoundRobinUsesLeastRecentlySelectedAccount(t *testing.T) {
 	st, err := store.Open(t.TempDir())
 	if err != nil {

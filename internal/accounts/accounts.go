@@ -13,6 +13,8 @@ const (
 	StatusQuotaExceeded = "quota_exceeded"
 	StatusPaused        = "paused"
 	StatusDeactivated   = "deactivated"
+
+	MinRemainingPercent = 5.0
 )
 
 type Account struct {
@@ -73,7 +75,7 @@ func (a Account) Available(now time.Time) bool {
 	if a.CooldownUntil != nil && now.Before(*a.CooldownUntil) {
 		return false
 	}
-	if a.Usage.Exhausted(now) {
+	if a.Usage.LowRemaining(now) {
 		return false
 	}
 	return true
@@ -83,10 +85,28 @@ func (u UsageState) Exhausted(now time.Time) bool {
 	return u.Primary.Exhausted(now) || u.Secondary.Exhausted(now)
 }
 
+func (u UsageState) LowRemaining(now time.Time) bool {
+	return u.Primary.LowRemaining(now) || u.Secondary.LowRemaining(now)
+}
+
 func (w *UsageWindow) Exhausted(now time.Time) bool {
 	if w == nil || w.UsedPercent == nil || *w.UsedPercent < 100 {
 		return false
 	}
+	return w.activeUntilReset(now)
+}
+
+func (w *UsageWindow) LowRemaining(now time.Time) bool {
+	if w == nil || w.UsedPercent == nil {
+		return false
+	}
+	if 100-*w.UsedPercent > MinRemainingPercent {
+		return false
+	}
+	return w.activeUntilReset(now)
+}
+
+func (w *UsageWindow) activeUntilReset(now time.Time) bool {
 	if w.ResetAt != nil && *w.ResetAt > 0 {
 		return now.Before(time.Unix(*w.ResetAt, 0))
 	}
